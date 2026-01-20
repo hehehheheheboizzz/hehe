@@ -1,40 +1,46 @@
-# Sử dụng nền tảng Ubuntu chuẩn
 FROM ubuntu:22.04
 
-# --- 1. CÀI ĐẶT JAVA 21 VÀ CÁC CÔNG CỤ CẦN THIẾT ---
-# Lệnh này giúp Java luôn có sẵn mỗi khi server bật lên
+# --- 1. CÀI ĐẶT JAVA 21, WGET, CURL VÀ SSH ---
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     curl wget sudo nano unzip openssh-server \
-    ca-certificates \
     openjdk-21-jre-headless \
+    jq \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir /var/run/sshd
+    && mkdir -p /var/run/sshd
 
 # --- 2. CẤU HÌNH SSH (Mật khẩu: 123456) ---
+# LƯU Ý: Mật khẩu này cực kỳ không an toàn nếu mở port 22 ra Internet
 RUN echo "root:123456" | chpasswd && \
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 
-# --- 3. TỰ ĐỘNG TẠO SCRIPT KHỞI ĐỘNG ---
-# File này sẽ chạy ngay khi bạn nhấn Deploy
+# --- 3. TẠO THƯ MỤC LÀM VIỆC ---
+WORKDIR /minecraft
+
+# --- 4. TẠO SCRIPT KHỞI ĐỘNG THÔNG MINH ---
 RUN printf '#!/bin/bash\n\
-echo "🚀 DANG KHOI DONG MINECRAFT SERVER..."\n\
+echo "🚀 KHOI DONG HE THONG..."\n\
 service ssh start\n\
 \n\
-# Dong y EULA tu dong\n\
+# Dong y EULA\n\
 echo "eula=true" > eula.txt\n\
 \n\
-# Kiem tra va chay server.jar\n\
-if [ -f "server.jar" ]; then\n\
-  java -Xmx1024M -Xms1024M -jar server.jar nogui\n\
-else\n\
-  echo "❌ Khong tim thay file server.jar! Dang treo de ban kiem tra..."\n\
-  tail -f /dev/null\n\
-fi' > /start.sh && chmod +x /start.sh
+# KIEM TRA VA TAI SERVER.JAR NEU CHUA CO\n\
+if [ ! -f "server.jar" ]; then\n\
+  echo "📥 Chua thay server.jar, dang tai PaperMC moi nhat (1.20.4)..."\n\
+  # Tu dong lay link tai ban build moi nhat cua 1.20.4\n\
+  VER="1.20.4"\n\
+  URL="https://api.papermc.io/v2/projects/paper/versions/$VER/builds/$(curl -s https://api.papermc.io/v2/projects/paper/versions/$VER | jq -r .builds[-1])/downloads/paper-$VER-$(curl -s https://api.papermc.io/v2/projects/paper/versions/$VER | jq -r .builds[-1]).jar"\n\
+  wget -O server.jar $URL\n\
+  echo "✅ Da tai xong!"\n\
+fi\n\
+\n\
+# CHAY SERVER\n\
+echo "🔥 Dang bat Minecraft Server..."\n\
+java -Xmx2G -Xms2G -jar server.jar nogui\n\
+' > /start.sh && chmod +x /start.sh
 
-# --- 4. THIẾT LẬP CHẠY ---
-WORKDIR /
+# --- 5. THIẾT LẬP CHẠY ---
 EXPOSE 22 25565
 
-# Chạy bằng bash để tránh lỗi Railpack
 CMD ["/bin/bash", "/start.sh"]
