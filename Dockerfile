@@ -1,48 +1,43 @@
+# Sử dụng Ubuntu 22.04 làm nền tảng
 FROM ubuntu:22.04
 
-# --- 1. CÀI ĐẶT MÔI TRƯỜNG & JAVA 21 ---
+# --- 1. CÀI ĐẶT JAVA 21 & CÔNG CỤ HỆ THỐNG ---
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
-    curl wget sudo nano unzip \
-    openssh-server \
-    net-tools iputils-ping \
+    curl wget sudo nano unzip openssh-server \
     ca-certificates \
-    # Minecraft 1.21.1 bắt buộc dùng Java 21
-    openjdk-21-jre-headless \ 
-    docker.io \
-    iptables \
+    # Cài Java 21 - Bắt buộc để chạy Minecraft 1.21.1
+    openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir /var/run/sshd
 
-# --- 2. CẤU HÌNH SSH & USER ---
-RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    echo "root:123456" | chpasswd && \
-    useradd -m -s /bin/bash trthaodev && \
-    echo "trthaodev:thaodev@" | chpasswd && \
-    usermod -aG sudo trthaodev && \
-    echo "trthaodev ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# --- 2. CẤU HÌNH SSH & ROOT (Mật khẩu: 123456) ---
+RUN echo "root:123456" | chpasswd && \
+    sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
 
-# --- 3. CÀI ĐẶT CLOUDFLARED ---
-RUN wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
-    dpkg -i cloudflared-linux-amd64.deb && \
-    rm cloudflared-linux-amd64.deb
-
-# --- 4. TẠO ENTRYPOINT TRỰC TIẾP TRONG DOCKERFILE ---
-# Cách này giúp bạn không cần file start.sh bên ngoài, tránh lỗi Railpack không tìm thấy file
+# --- 3. TẠO SCRIPT KHỞI ĐỘNG (ENTRYPOINT) TRỰC TIẾP ---
+# Đoạn này sẽ tự tạo file /start.sh bên trong container khi build
 RUN printf '#!/bin/bash\n\
-echo "=== DANG KHOI DONG HE THONG ==="\n\
-if [ -S /var/run/docker.sock ]; then chmod 666 /var/run/docker.sock; fi\n\
+echo "🚀 ĐANG KHỞI ĐỘNG MINECRAFT SERVER..."\n\
 service ssh start\n\
-if [ ! -z "$CF_TOKEN" ]; then\n\
-  echo "✅ Dang ket noi Cloudflare Tunnel..."\n\
-  cloudflared tunnel run --token $CF_TOKEN\n\
+\n\
+# Tự động tạo và đồng ý EULA để tránh lỗi Exit Code 128\n\
+echo "eula=true" > eula.txt\n\
+\n\
+# Kiểm tra file server.jar và chạy\n\
+if [ -f "server.jar" ]; then\n\
+  echo "✅ Tìm thấy server.jar, đang thực thi lệnh Java..."\n\
+  java -Xmx1024M -Xms1024M -jar server.jar nogui\n\
 else\n\
-  echo "⚠️ Thieu CF_TOKEN! Container se chay o che do cho..."\n\
+  echo "❌ KHÔNG TÌM THẤY server.jar TRONG THƯ MỤC GỐC!"\n\
+  echo "Vui lòng kiểm tra lại tên file hoặc upload file vào thư mục gốc."\n\
   tail -f /dev/null\n\
-fi' > /entrypoint.sh && chmod +x /entrypoint.sh
+fi' > /start.sh && chmod +x /start.sh
 
-# --- 5. KHAI BÁO CỔNG ---
+# --- 4. THIẾT LẬP MÔI TRƯỜNG LÀM VIỆC ---
+WORKDIR /
 EXPOSE 22 25565
 
-# --- 6. CHẠY ---
-ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
+# --- 5. LỆNH CHẠY CHÍNH ---
+# Dùng bash để chạy start.sh giúp Railpack nhận diện được script khởi động
+CMD ["/bin/bash", "/start.sh"]
