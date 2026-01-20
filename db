@@ -27,8 +27,8 @@ RUN wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/c
     dpkg -i cloudflared-linux-amd64.deb && \
     rm cloudflared-linux-amd64.deb
 
-# --- 4. TẠO SCRIPT KHỞI ĐỘNG TRỰC TIẾP TRONG DOCKERFILE ---
-RUN echo '#!/bin/bash\n\
+# --- 4. TẠO SCRIPT KHỞI ĐỘNG TRỰC TIẾP ---
+RUN printf '#!/bin/bash\n\
 echo "=== DANG KHOI DONG HE THONG ==="\n\
 # Fix quyen Docker Socket\n\
 if [ -S /var/run/docker.sock ]; then chmod 666 /var/run/docker.sock; fi\n\
@@ -39,12 +39,11 @@ if [ ! -z "$CF_TOKEN" ]; then\n\
   echo "✅ Dang ket noi Cloudflare Tunnel..."\n\
   cloudflared tunnel run --token $CF_TOKEN\n\
 else\n\
-  echo "⚠️ Thieu CF_TOKEN! Duy tri container bang tail..."\n\
+  echo "⚠️ Thieu CF_TOKEN! Duy tri container chay..."\n\
   tail -f /dev/null\n\
 fi' > /entrypoint.sh && chmod +x /entrypoint.sh
 
 # --- 5. KHAI BÁO PORT ---
-# 22: SSH | 25565: Minecraft
 EXPOSE 22 25565
 
 # --- 6. CHẠY ---
