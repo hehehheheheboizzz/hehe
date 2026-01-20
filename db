@@ -1,57 +1,51 @@
 FROM ubuntu:22.04
 
-# --- 1. CÀI ĐẶT MÔI TRƯỜNG & JAVA 21 (Bắt buộc cho MC 1.21.1) ---
+# --- 1. CÀI ĐẶT MÔI TRƯỜNG & JAVA 21 ---
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     curl wget sudo nano unzip \
     openssh-server \
     net-tools iputils-ping \
     ca-certificates \
-    # Cài đặt Java 21 để chạy server.jar
-    openjdk-21-jre-headless \
-    # Cài đặt Docker CLI để dùng lệnh docker bên trong
+    # Cài Java 21 cho Minecraft 1.21.1
+    openjdk-21-jre-headless \ 
     docker.io \
     iptables \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir /var/un/sshd
+    && mkdir /var/run/sshd
 
-# --- 2. CẤU HÌNH SSH & ROOT ---
+# --- 2. CẤU HÌNH SSH & USER ---
 RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
-    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config && \
-    echo "root:123456" | chpasswd
-
-# --- 3. TẠO USER trthaodev ---
-RUN useradd -m -s /bin/bash trthaodev && \
+    echo "root:123456" | chpasswd && \
+    useradd -m -s /bin/bash trthaodev && \
     echo "trthaodev:thaodev@" | chpasswd && \
     usermod -aG sudo trthaodev && \
-    usermod -aG docker trthaodev && \
     echo "trthaodev ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# --- 4. CÀI ĐẶT CLOUDFLARED & FILEBROWSER ---
+# --- 3. CÀI ĐẶT CLOUDFLARED ---
 RUN wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
     dpkg -i cloudflared-linux-amd64.deb && \
-    rm cloudflared-linux-amd64.deb && \
-    curl -fsSL https://raw.githubusercontent.com/filebrowser/get/master/get.sh | bash
+    rm cloudflared-linux-amd64.deb
 
-# --- 5. SCRIPT KHỞI ĐỘNG (Sửa lỗi Docker Socket) ---
-RUN echo '#!/bin/bash' > /start.sh && \
-    echo 'echo "=== DANG KHOI DONG HE THONG ==="' >> /start.sh && \
-    # Tự động cấp quyền cho docker socket nếu được mount vào
-    echo 'if [ -S /var/run/docker.sock ]; then chmod 666 /var/run/docker.sock; fi' >> /start.sh && \
-    echo 'service ssh start' >> /start.sh && \
-    # Chạy FileBrowser ở thư mục gốc để quản lý file
-    echo 'nohup filebrowser -r / -p 8080 --no-auth > /var/log/fb.log 2>&1 &' >> /start.sh && \
-    echo 'if [ ! -z "$CF_TOKEN" ]; then' >> /start.sh && \
-    echo '  echo "1. Dang ket noi Cloudflare Tunnel..."' >> /start.sh && \
-    echo '  cloudflared tunnel run --token $CF_TOKEN' >> /start.sh && \
-    echo 'else' >> /start.sh && \
-    echo '  echo "⚠️ Thieu CF_TOKEN! Giu container chay bang tail..."' >> /start.sh && \
-    echo '  tail -f /dev/null' >> /start.sh && \
-    echo 'fi' >> /start.sh && \
-    chmod +x /start.sh
+# --- 4. TẠO SCRIPT KHỞI ĐỘNG TRỰC TIẾP TRONG DOCKERFILE ---
+RUN echo '#!/bin/bash\n\
+echo "=== DANG KHOI DONG HE THONG ==="\n\
+# Fix quyen Docker Socket\n\
+if [ -S /var/run/docker.sock ]; then chmod 666 /var/run/docker.sock; fi\n\
+# Chay SSH\n\
+service ssh start\n\
+# Chay Cloudflare Tunnel hoac duy tri container\n\
+if [ ! -z "$CF_TOKEN" ]; then\n\
+  echo "✅ Dang ket noi Cloudflare Tunnel..."\n\
+  cloudflared tunnel run --token $CF_TOKEN\n\
+else\n\
+  echo "⚠️ Thieu CF_TOKEN! Duy tri container bang tail..."\n\
+  tail -f /dev/null\n\
+fi' > /entrypoint.sh && chmod +x /entrypoint.sh
 
-# --- 6. KHAI BÁO PORT ---
-# 25565: Minecraft | 8080: FileBrowser | 22: SSH
-EXPOSE 25565 8080 22
+# --- 5. KHAI BÁO PORT ---
+# 22: SSH | 25565: Minecraft
+EXPOSE 22 25565
 
-CMD ["/start.sh"]
+# --- 6. CHẠY ---
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
